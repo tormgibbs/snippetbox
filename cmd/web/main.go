@@ -6,9 +6,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"emmasela-snippetbox/internal/models"
 
+	"github.com/alexedwards/scs/pgxstore"
+	"github.com/alexedwards/scs/v2"
+	"github.com/go-playground/form/v4"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,9 +24,11 @@ type postgresDB struct {
 // make the SnippetModel object available to our handlers.
 
 type application struct {
-	errorLog *log.Logger
-	infoLog *log.Logger
-	snippets *models.SnippetModel
+	errorLog 				*log.Logger
+	infoLog 				*log.Logger
+	snippets 				*models.SnippetModel
+	formDecoder 		*form.Decoder
+	sessionManager 	*scs.SessionManager
 }
 
 
@@ -44,6 +50,15 @@ func main() {
 	}
 	defer db.Close()
 
+	formDecoder := form.NewDecoder()
+
+	sessionManager := scs.New()
+	sessionManager.Store = pgxstore.New(db.pool)
+	sessionManager.Lifetime = 12 * time.Hour
+
+	// Setting the session cookie to secure to ensure that it is sent when HTTPS connection is used
+	sessionManager.Cookie.Secure = true
+
 
 	// Initialize a models.SnippetModel instance and add it to the application
 	// dependencies.
@@ -51,6 +66,8 @@ func main() {
 		errorLog: errorLog,
 		infoLog: infoLog,
 		snippets: &models.SnippetModel{DB: db.pool},
+		formDecoder: formDecoder,
+		sessionManager: sessionManager,
 	}
 
 	server := &http.Server{
@@ -60,7 +77,7 @@ func main() {
 	}
 
 	infoLog.Printf("Starting server on %s", *addr)
-	err = server.ListenAndServe()
+	err = server.ListenAndServeTLS("./tls/cert.pem", "./tls/key.pem")
 	errorLog.Fatal(err)
 
 
